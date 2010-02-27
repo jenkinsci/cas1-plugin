@@ -1,0 +1,20 @@
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+    <f:entry title="${%CAS Server URL}" help="/plugin/cas1/help/casServerUrl.html">
+        <f:textbox field="casServerUrl" />
+    </f:entry>
+    <f:entry title="${%Hudson Host Name}" help="/plugin/cas1/help/hudsonHostName.html">
+        <f:textbox field="hudsonHostName" default="${if (request.serverPort == 80) request.serverName; else request.serverName + ':' + request.serverPort;}"/>
+    </f:entry>
+  <f:advanced>
+      <f:entry title="${%Force Renewal}" help="/plugin/cas1/help/forceRenewal.html">
+          <f:checkbox field="forceRenewal" />
+      </f:entry>
+      <f:entry title="${%Roles Validation Script}" help="/plugin/cas1/help/rolesValidationScript.html">
+          <f:textarea field="rolesValidationScript" />
+      </f:entry>
+      <f:entry title="${%Test Validation Response}" help="/plugin/cas1/help/testValidationResponse.html">
+          <f:textarea field="testValidationResponse" />
+      </f:entry>
+      <f:validateButton  title="${%Test Script}" method="testScript" with="rolesValidationScript,testValidationResponse" />
+  </f:advanced>
+</j:jelly>
