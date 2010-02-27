@@ -12,6 +12,7 @@
   <version>1.0</version>
   <packaging>hpi</packaging>
   <name>CAS protocol version 1 plugin</name>
+  <url>http://wiki.hudson-ci.org/display/HUDSON/CAS1+Plugin</url> 
 
   <developers>
       <developer>
