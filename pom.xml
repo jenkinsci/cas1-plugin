@@ -8,7 +8,7 @@
   </parent>
 
   <artifactId>cas1</artifactId>
-  <version>1.0.1-SNAPSHOT</version>
+  <version>1.0.1</version>
   <packaging>hpi</packaging>
   <name>CAS protocol version 1 plugin</name>
   <url>http://wiki.hudson-ci.org/display/HUDSON/CAS1+Plugin</url> 
@@ -81,4 +81,10 @@
             <version>2.5</version>
         </dependency>
     </dependencies>
+
+  <scm>
+    <connection>scm:svn:https://guest@svn.dev.java.net/svn/hudson/tags/cas1-1.0.1</connection>
+    <developerConnection>scm:svn:https://svn.dev.java.net/svn/hudson/tags/cas1-1.0.1</developerConnection>
+    <url>https://hudson.dev.java.net/source/browse/hudson/tags/cas1-1.0.1</url>
+  </scm>
 </project>
