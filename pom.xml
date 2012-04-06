@@ -28,11 +28,6 @@
       <id>repo.jenkins-ci.org</id>
       <url>http://repo.jenkins-ci.org/public/</url>
     </repository>
-
-      <repository>
-          <id>m2-central</id>
-          <url>http://repo1.maven.org/maven2/</url> <!-- for cas-client-core -->
-      </repository>
   </repositories>
 
   <pluginRepositories>
