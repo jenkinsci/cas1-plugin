@@ -31,22 +31,7 @@ import hudson.model.Descriptor;
 import hudson.security.ChainedServletFilter;
 import hudson.security.SecurityRealm;
 import hudson.util.FormValidation;
-import org.acegisecurity.Authentication;
-import org.acegisecurity.context.SecurityContextHolder;
-import org.apache.commons.lang.StringUtils;
-import org.codehaus.groovy.control.CompilationFailedException;
-import org.jasig.cas.client.authentication.AttributePrincipalImpl;
-import org.jasig.cas.client.authentication.AuthenticationFilter;
-import org.jasig.cas.client.util.AbstractCasFilter;
-import org.jasig.cas.client.util.CommonUtils;
-import org.jasig.cas.client.validation.*;
-import org.kohsuke.stapler.*;
-import org.springframework.web.util.UrlPathHelper;
 
-import javax.servlet.*;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import javax.servlet.http.HttpSession;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -56,8 +41,38 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
+
+import javax.servlet.Filter;
+import javax.servlet.FilterChain;
+import javax.servlet.FilterConfig;
+import javax.servlet.ServletException;
+import javax.servlet.ServletRequest;
+import javax.servlet.ServletResponse;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
+import org.acegisecurity.Authentication;
+import org.acegisecurity.context.SecurityContextHolder;
+import org.apache.commons.lang.StringUtils;
+import org.codehaus.groovy.control.CompilationFailedException;
+import org.jasig.cas.client.authentication.AttributePrincipalImpl;
+import org.jasig.cas.client.authentication.AuthenticationFilter;
+import org.jasig.cas.client.util.AbstractCasFilter;
+import org.jasig.cas.client.util.CommonUtils;
+import org.jasig.cas.client.validation.AbstractCasProtocolUrlBasedTicketValidator;
+import org.jasig.cas.client.validation.Assertion;
+import org.jasig.cas.client.validation.AssertionImpl;
+import org.jasig.cas.client.validation.Cas10TicketValidationFilter;
+import org.jasig.cas.client.validation.TicketValidationException;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.StaplerRequest;
+import org.kohsuke.stapler.StaplerResponse;
+import org.springframework.web.util.UrlPathHelper;
 
 /**
  * {@link hudson.security.SecurityRealm} that uses CAS authentication protocol version 1.
@@ -73,12 +88,14 @@ public class Cas1SecurityRealm extends SecurityRealm {
     public final String casServerUrl;
     public final String hudsonHostName;
     public final Boolean forceRenewal;
+    public final Boolean triggerBuildRemotelyCompatibility;
     public final String rolesValidationScript;
     public final String testValidationResponse; // not used, but stored for the convenience of future testing
     private transient Script parsedScript = null; // lazy cache, but avoid marshalling
 
     @DataBoundConstructor
-    public Cas1SecurityRealm(String casServerUrl, String hudsonHostName, Boolean forceRenewal, String rolesValidationScript, String testValidationResponse) {
+    public Cas1SecurityRealm(String casServerUrl, String hudsonHostName, Boolean forceRenewal,
+	    Boolean triggerBuildRemotelyCompatibility, String rolesValidationScript, String testValidationResponse) {
         if (testValidationResponse == null) {
             testValidationResponse = "";
         }
@@ -87,6 +104,7 @@ public class Cas1SecurityRealm extends SecurityRealm {
         this.hudsonHostName = Util.fixEmptyAndTrim(hudsonHostName);
         this.rolesValidationScript = normalizeRolesValidationScript(rolesValidationScript);
         this.forceRenewal = forceRenewal;
+	this.triggerBuildRemotelyCompatibility = triggerBuildRemotelyCompatibility;
     }
 
 //    @Override
@@ -118,11 +136,23 @@ public class Cas1SecurityRealm extends SecurityRealm {
 
     @Override
     public Filter createFilter(FilterConfig filterConfig) {
-        AuthenticationFilter authenticationFilter = new AuthenticationFilter();
+	AbstractCasFilter authenticationFilter = null;
+	if (triggerBuildRemotelyCompatibility) {
+	    //then we should use our 'custom' filter
+	    //the casts are not the most elegant way... buttt
+	    authenticationFilter = new CustomAuthenticationFilter();
+	    ((CustomAuthenticationFilter) authenticationFilter).setRenew(forceRenewal);
+	    ((CustomAuthenticationFilter) authenticationFilter).setGateway(false);
+	    ((CustomAuthenticationFilter) authenticationFilter).setCasServerLoginUrl(casServerUrl + "/login");
+	} else
+ {
+	    authenticationFilter = new AuthenticationFilter();
+	    ((AuthenticationFilter) authenticationFilter).setRenew(forceRenewal);
+	    ((AuthenticationFilter) authenticationFilter).setGateway(false);
+	    ((AuthenticationFilter) authenticationFilter).setCasServerLoginUrl(casServerUrl + "/login");
+	}
         authenticationFilter.setIgnoreInitConfiguration(true); // configuring here, not in web.xml
-        authenticationFilter.setRenew(forceRenewal);
-        authenticationFilter.setGateway(false);
-        authenticationFilter.setCasServerLoginUrl(casServerUrl + "/login");
+
         authenticationFilter.setServerName(hudsonHostName);
 
         Cas10TicketValidationFilter validationFilter = new Cas10TicketValidationFilter();
@@ -132,11 +162,13 @@ public class Cas1SecurityRealm extends SecurityRealm {
         validationFilter.setTicketValidator(
                 new AbstractCasProtocolUrlBasedTicketValidator(casServerUrl) {
 
-                    protected String getUrlSuffix() {
+                    @Override
+		    protected String getUrlSuffix() {
                         return "validate"; // version 1 protocol
                     }
 
-                    protected Assertion parseResponseFromServer(final String response) throws TicketValidationException {
+                    @Override
+		    protected Assertion parseResponseFromServer(final String response) throws TicketValidationException {
                         if (!response.startsWith("yes")) {
                             throw new TicketValidationException("CAS could not validate ticket.");
                         }
@@ -172,15 +204,30 @@ public class Cas1SecurityRealm extends SecurityRealm {
             public void doFilter(final ServletRequest servletRequest, final ServletResponse servletResponse, final FilterChain filterChain) throws IOException, ServletException {
                 final HttpServletRequest request = (HttpServletRequest) servletRequest;
                 final HttpSession session = request.getSession(false);
-                final Assertion assertion = (Assertion) session.getAttribute(AbstractCasFilter.CONST_CAS_ASSERTION);
+		if ((session == null || session.getAttribute(AbstractCasFilter.CONST_CAS_ASSERTION) == null)
+			&& CustomAuthenticationFilter.isBuildRemotelyRequest(request)) {
+		    //then let's say that we are anonymous - not sure if this is the right way to do it..
+		    try {
+			SecurityContextHolder.getContext().setAuthentication(
+				new Cas1Authentication("anonymous", Collections.EMPTY_LIST));
+			filterChain.doFilter(servletRequest, servletResponse);
+		    } finally {
+			SecurityContextHolder.getContext().setAuthentication(null);
+		    }
 
-                try {
-                    Cas1Authentication auth = (Cas1Authentication) assertion.getAttributes().get(AUTH_KEY);
-                    SecurityContextHolder.getContext().setAuthentication(auth);
-                    filterChain.doFilter(servletRequest, servletResponse);
-                } finally {
-                    SecurityContextHolder.getContext().setAuthentication(null);
-                }
+		}
+		else {
+
+		    final Assertion assertion = (Assertion) session.getAttribute(AbstractCasFilter.CONST_CAS_ASSERTION);
+
+		    try {
+			Cas1Authentication auth = (Cas1Authentication) assertion.getAttributes().get(AUTH_KEY);
+			SecurityContextHolder.getContext().setAuthentication(auth);
+			filterChain.doFilter(servletRequest, servletResponse);
+		    } finally {
+			SecurityContextHolder.getContext().setAuthentication(null);
+		    }
+		}
             }
         };
 
@@ -235,6 +282,7 @@ public class Cas1SecurityRealm extends SecurityRealm {
         return (Collection) script.run();
     }
 
+    @Override
     public SecurityComponents createSecurityComponents() {
         return new SecurityComponents(); // do nothing, falling back to createFilter()
     }
@@ -254,7 +302,8 @@ public class Cas1SecurityRealm extends SecurityRealm {
     public static final class DescriptorImpl extends Descriptor<SecurityRealm> {
         private static final String CONFIRMED = "confirmed";
 
-        public String getDisplayName() {
+        @Override
+	public String getDisplayName() {
             return "CAS protocol version 1";
         }
 

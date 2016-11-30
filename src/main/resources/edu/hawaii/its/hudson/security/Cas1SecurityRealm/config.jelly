@@ -7,6 +7,9 @@
         <f:textbox field="hudsonHostName" default="${if (request.serverPort == 80) request.serverName; else request.serverName + ':' + request.serverPort;}"/>
     </f:entry>
   <f:advanced>
+      <f:entry title="${%Activate 'Trigger builds remotely' compatibility}" help="/plugin/cas1/help/triggerBuildRemotelyCompatibility.html">
+          <f:checkbox field="triggerBuildRemotelyCompatibility" />
+      </f:entry>
       <f:entry title="${%Force Renewal}" help="/plugin/cas1/help/forceRenewal.html">
           <f:checkbox field="forceRenewal" />
       </f:entry>
